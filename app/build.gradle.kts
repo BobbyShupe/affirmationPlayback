@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.minimal"
+    namespace = "com.example.affirmationPlayback"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.minimal"
+        applicationId = "com.example.affirmationPlayback"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
@@ -44,7 +44,7 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
 
-    // Optional but very common / recommended in 2025 minimal apps
+    // Optional but very common / recommended in 2025 affirmationPlayback apps
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.fragment:fragment-ktx:1.8.4") // even if not using fragments
 }

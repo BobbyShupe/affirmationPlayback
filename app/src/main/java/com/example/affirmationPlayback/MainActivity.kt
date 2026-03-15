@@ -1,4 +1,4 @@
-package com.example.minimal
+package com.example.affirmationPlayback
 
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
@@ -19,7 +19,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val text = MaterialTextView(this).apply {
-            text = "Hello, minimal Material 3 world!"
+            text = "Hello, affirmationPlayback Material 3 world!"
             textSize = 24f
             id = android.R.id.text1
 

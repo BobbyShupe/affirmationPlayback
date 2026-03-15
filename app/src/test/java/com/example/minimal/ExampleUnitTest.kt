@@ -1,4 +1,4 @@
-package com.example.minimal
+package com.example.affirmationPlayback
 
 import org.junit.Test
 
