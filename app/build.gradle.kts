@@ -34,8 +34,8 @@ android {
     }
 
     buildFeatures {
-        viewBinding = false
-        compose = false     // we're using View system here
+        viewBinding = true
+        compose = false
     }
 }
 
@@ -47,4 +47,5 @@ dependencies {
     // Optional but very common / recommended in 2025 affirmationPlayback apps
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.fragment:fragment-ktx:1.8.4") // even if not using fragments
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
 }

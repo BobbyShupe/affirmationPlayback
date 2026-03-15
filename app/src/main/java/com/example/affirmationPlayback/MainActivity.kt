@@ -1,40 +1,281 @@
 package com.example.affirmationPlayback
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.media.MediaPlayer
+import android.media.MediaRecorder
 import android.os.Bundle
+import android.util.Log
+import android.view.View
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import com.google.android.material.textview.MaterialTextView
-import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
+import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.example.affirmationPlayback.databinding.ActivityMainBinding
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityMainBinding
+    private var recorder: MediaRecorder? = null
+    private var currentRecordingFile: File? = null
+    private val recordings = mutableListOf<File>()
+    private lateinit var adapter: RecordingAdapter
+
+    private var mediaPlayer: MediaPlayer? = null
+    private var isPlayingPlaylist = false
+
+    private val TAG = "AffirmMain"
+
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            startRecording()
+        } else {
+            Toast.makeText(this, "Microphone permission is required", Toast.LENGTH_LONG).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val root = ConstraintLayout(this).apply {
-            layoutParams = LayoutParams(
-                LayoutParams.MATCH_PARENT,
-                LayoutParams.MATCH_PARENT
-            )
-        }
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        val text = MaterialTextView(this).apply {
-            text = "Hello, affirmationPlayback Material 3 world!"
-            textSize = 24f
-            id = android.R.id.text1
+        adapter = RecordingAdapter(
+            recordings = recordings,
+            onPlay = { playSingle(it) },
+            onRename = { showRenameDialog(it) },
+            onDelete = { deleteRecording(it) }
+        )
 
-            layoutParams = LayoutParams(
-                LayoutParams.WRAP_CONTENT,
-                LayoutParams.WRAP_CONTENT
-            ).apply {
-                topToTop = LayoutParams.PARENT_ID
-                bottomToBottom = LayoutParams.PARENT_ID
-                startToStart = LayoutParams.PARENT_ID
-                endToEnd = LayoutParams.PARENT_ID
+        binding.recyclerView.layoutManager = LinearLayoutManager(this)
+        binding.recyclerView.adapter = adapter
+
+        binding.btnRecord.setOnClickListener {
+            if (hasMicPermission()) {
+                startRecording()
+            } else {
+                requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             }
         }
 
-        root.addView(text)
-        setContentView(root)
+        binding.btnStop.setOnClickListener {
+            stopRecording()
+        }
+
+        binding.btnPlayAll.setOnClickListener {
+            if (recordings.isNotEmpty()) {
+                playPlaylist()
+            } else {
+                Toast.makeText(this, "No recordings to play", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        loadRecordings()           // initial load + visibility update
+    }
+
+    private fun hasMicPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+
+    private fun getRecordingsDir(): File =
+        File(filesDir, "affirmations").also { dir ->
+            if (!dir.exists()) dir.mkdirs()
+        }
+
+    private fun loadRecordings() {
+        recordings.clear()
+        val files = getRecordingsDir().listFiles() ?: emptyArray()
+        recordings.addAll(files.sortedByDescending { it.lastModified() })
+        adapter.notifyDataSetChanged()
+        updatePlaylistVisibility()
+    }
+
+    private fun updatePlaylistVisibility() {
+        if (recordings.isEmpty()) {
+            binding.tvEmpty.visibility = View.VISIBLE
+            binding.recyclerView.visibility = View.GONE
+            binding.btnPlayAll.isEnabled = false
+            binding.tvStatus.text = "No affirmations yet"
+        } else {
+            binding.tvEmpty.visibility = View.GONE
+            binding.recyclerView.visibility = View.VISIBLE
+            binding.btnPlayAll.isEnabled = true
+            binding.tvStatus.text = "${recordings.size} affirmation${if (recordings.size != 1) "s" else ""}"
+        }
+    }
+
+    private fun startRecording() {
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        currentRecordingFile = File(getRecordingsDir(), "affirm_$timestamp.m4a")
+
+        recorder = MediaRecorder().apply {
+            setAudioSource(MediaRecorder.AudioSource.MIC)
+            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            setOutputFile(currentRecordingFile?.absolutePath)
+
+            try {
+                prepare()
+                start()
+                binding.tvStatus.text = "Recording…"
+                binding.btnRecord.isEnabled = false
+                binding.btnStop.isEnabled = true
+            } catch (e: Exception) {
+                Log.e(TAG, "startRecording failed", e)
+                Toast.makeText(this@MainActivity, "Failed to start recording", Toast.LENGTH_LONG).show()
+                releaseRecorder()
+            }
+        }
+    }
+
+    private fun stopRecording() {
+        releaseRecorder()
+
+        currentRecordingFile?.let { file ->
+            recordings.add(0, file)           // newest on top
+            adapter.notifyItemInserted(0)
+            binding.recyclerView.scrollToPosition(0)
+            updatePlaylistVisibility()
+        }
+
+        currentRecordingFile = null
+        binding.tvStatus.text = "Ready"
+        binding.btnRecord.isEnabled = true
+        binding.btnStop.isEnabled = false
+    }
+
+    private fun releaseRecorder() {
+        recorder?.apply {
+            try { stop() } catch (_: Exception) {}
+            try { release() } catch (_: Exception) {}
+        }
+        recorder = null
+    }
+
+    private fun playSingle(file: File) {
+        releasePlayer()
+        mediaPlayer = MediaPlayer().apply {
+            try {
+                setDataSource(file.absolutePath)
+                prepare()
+                start()
+                binding.tvStatus.text = "Playing: ${file.nameWithoutExtension}"
+                setOnCompletionListener {
+                    releasePlayer()
+                    binding.tvStatus.text = "Ready"
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "playSingle failed", e)
+                Toast.makeText(this@MainActivity, "Cannot play this file", Toast.LENGTH_SHORT).show()
+                releasePlayer()
+            }
+        }
+    }
+
+    private fun playPlaylist() {
+        if (isPlayingPlaylist) {
+            releasePlayer()
+            isPlayingPlaylist = false
+            binding.btnPlayAll.text = "Play Playlist"
+            binding.tvStatus.text = "Ready"
+            return
+        }
+
+        isPlayingPlaylist = true
+        binding.btnPlayAll.text = "Stop Playlist"
+        playNextInPlaylist(0)
+    }
+
+    private fun playNextInPlaylist(index: Int) {
+        if (index >= recordings.size || !isPlayingPlaylist) {
+            isPlayingPlaylist = false
+            binding.btnPlayAll.text = "Play Playlist"
+            binding.tvStatus.text = "Ready"
+            releasePlayer()
+            return
+        }
+
+        val file = recordings[index]
+        binding.tvStatus.text = "Playing (${index + 1}/${recordings.size}): ${file.nameWithoutExtension}"
+
+        releasePlayer()
+        mediaPlayer = MediaPlayer().apply {
+            try {
+                setDataSource(file.absolutePath)
+                prepareAsync()
+                setOnPreparedListener { start() }
+                setOnCompletionListener { playNextInPlaylist(index + 1) }
+                setOnErrorListener { _, _, _ ->
+                    playNextInPlaylist(index + 1)
+                    true
+                }
+            } catch (e: Exception) {
+                playNextInPlaylist(index + 1)
+            }
+        }
+    }
+
+    private fun releasePlayer() {
+        mediaPlayer?.apply {
+            try { stop() } catch (_: Exception) {}
+            try { release() } catch (_: Exception) {}
+        }
+        mediaPlayer = null
+    }
+
+    private fun showRenameDialog(file: File) {
+        val input = TextInputEditText(this).apply { setText(file.nameWithoutExtension) }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Rename")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val newName = input.text?.toString()?.trim() ?: return@setPositiveButton
+                if (newName.isNotBlank()) {
+                    val newFile = File(file.parentFile!!, "$newName.m4a")
+                    if (file.renameTo(newFile)) {
+                        loadRecordings()  // refreshes list + visibility
+                    } else {
+                        Toast.makeText(this, "Rename failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun deleteRecording(file: File) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Delete?")
+            .setMessage("Delete \"${file.nameWithoutExtension}\" ?")
+            .setPositiveButton("Delete") { _, _ ->
+                if (file.delete()) {
+                    val pos = recordings.indexOf(file)
+                    if (pos >= 0) {
+                        recordings.removeAt(pos)
+                        adapter.notifyItemRemoved(pos)
+                        updatePlaylistVisibility()
+                    }
+                } else {
+                    Toast.makeText(this, "Delete failed", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    override fun onDestroy() {
+        releaseRecorder()
+        releasePlayer()
+        super.onDestroy()
     }
 }
