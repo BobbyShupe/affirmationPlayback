@@ -1,12 +1,12 @@
 package com.example.affirmationPlayback
 
+import android.view.View
 import android.Manifest
 import android.content.pm.PackageManager
 import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.os.Bundle
 import android.util.Log
-import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -45,15 +45,18 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
         adapter = RecordingAdapter(
             recordings = recordings,
-            onPlay = { playSingle(it) },
-            onRename = { showRenameDialog(it) },
-            onDelete = { deleteRecording(it) }
+            onPlay = { file -> playSingle(file) },
+            onRename = { file -> showRenameDialog(file) },
+            onDelete = { file ->
+
+                deleteRecording(file)
+                adapter.clearSelection()           // optional: remove highlight
+            }
         )
 
         binding.recyclerView.layoutManager = LinearLayoutManager(this)
@@ -79,7 +82,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        loadRecordings()           // initial load + visibility update
+        loadRecordings()
     }
 
     private fun hasMicPermission(): Boolean =
@@ -94,7 +97,7 @@ class MainActivity : AppCompatActivity() {
     private fun loadRecordings() {
         recordings.clear()
         val files = getRecordingsDir().listFiles() ?: emptyArray()
-        recordings.addAll(files.sortedByDescending { it.lastModified() })
+        recordings.addAll(files.sortedBy { it.lastModified() })  // oldest first
         adapter.notifyDataSetChanged()
         updatePlaylistVisibility()
     }
@@ -141,9 +144,9 @@ class MainActivity : AppCompatActivity() {
         releaseRecorder()
 
         currentRecordingFile?.let { file ->
-            recordings.add(0, file)           // newest on top
-            adapter.notifyItemInserted(0)
-            binding.recyclerView.scrollToPosition(0)
+            recordings.add(file)          // ← adds to the end (bottom)
+            adapter.notifyItemInserted(recordings.size - 1)
+            binding.recyclerView.scrollToPosition(recordings.size - 1)
             updatePlaylistVisibility()
         }
 
@@ -236,14 +239,14 @@ class MainActivity : AppCompatActivity() {
         val input = TextInputEditText(this).apply { setText(file.nameWithoutExtension) }
 
         MaterialAlertDialogBuilder(this)
-            .setTitle("Rename")
+            .setTitle("Rename affirmation")
             .setView(input)
             .setPositiveButton("Save") { _, _ ->
                 val newName = input.text?.toString()?.trim() ?: return@setPositiveButton
                 if (newName.isNotBlank()) {
                     val newFile = File(file.parentFile!!, "$newName.m4a")
                     if (file.renameTo(newFile)) {
-                        loadRecordings()  // refreshes list + visibility
+                        loadRecordings()
                     } else {
                         Toast.makeText(this, "Rename failed", Toast.LENGTH_SHORT).show()
                     }
@@ -265,6 +268,7 @@ class MainActivity : AppCompatActivity() {
                         adapter.notifyItemRemoved(pos)
                         updatePlaylistVisibility()
                     }
+                    Toast.makeText(this, "Deleted", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this, "Delete failed", Toast.LENGTH_SHORT).show()
                 }

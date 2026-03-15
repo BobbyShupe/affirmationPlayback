@@ -7,4 +7,7 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="selected_item_background">#E3F2FD</color> <!-- light blue -->
+    <color name="selected_item_text">#000000</color>     <!-- black -->
+    <color name="normal_item_text">#848484</color>           <!-- gray -->
 </resources>

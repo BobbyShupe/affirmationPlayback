@@ -48,4 +48,5 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.fragment:fragment-ktx:1.8.4") // even if not using fragments
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation(libs.filament.android)
 }
