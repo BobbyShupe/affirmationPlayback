@@ -308,9 +308,21 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Save") { _, _ ->
                 val newName = input.text?.toString()?.trim() ?: return@setPositiveButton
                 if (newName.isNotBlank()) {
-                    val newFile = File(file.parentFile!!, "$newName.m4a")
-                    if (file.renameTo(newFile)) {
-                        loadRecordings()
+                    val parentDir = file.parentFile ?: getRecordingsDir()
+                    var uniqueFile = File(parentDir, "$newName.m4a")
+
+                    // If the file exists and it's NOT the current file we are renaming
+                    if (uniqueFile.exists() && uniqueFile.absolutePath != file.absolutePath) {
+                        var counter = 1
+                        // Loop until a name like "Affirmation (1).m4a" is available
+                        while (uniqueFile.exists()) {
+                            uniqueFile = File(parentDir, "$newName ($counter).m4a")
+                            counter++
+                        }
+                    }
+
+                    if (file.renameTo(uniqueFile)) {
+                        loadRecordings() // Refresh the list from disk
                     } else {
                         Toast.makeText(this, "Rename failed", Toast.LENGTH_SHORT).show()
                     }
