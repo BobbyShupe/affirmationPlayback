@@ -232,6 +232,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun playSingle(file: File) {
         val index = recordings.indexOf(file)
+        adapter.updateSelection(index)
         if (index != -1) {
             adapter.updateSelection(index)
             binding.recyclerView.smoothScrollToPosition(index) // Optional: scroll to it
@@ -244,8 +245,25 @@ class MainActivity : AppCompatActivity() {
                 start()
                 binding.tvStatus.text = "Playing: ${file.nameWithoutExtension}"
                 setOnCompletionListener {
-                    releasePlayer()
-                    binding.tvStatus.text = "Ready"
+                    // --- DELAY LOGIC START ---
+                    val delaySeconds = binding.etDelaySeconds.text.toString().toLongOrNull() ?: 0L
+                    val isDelayEnabled = binding.switchDelay.isChecked // Assuming your switch ID
+
+                    if (isDelayEnabled && delaySeconds > 0) {
+                        binding.tvStatus.text = "Waiting $delaySeconds seconds..."
+                        // Wait before playing the next track
+                        binding.root.postDelayed({
+                            if (isPlayingPlaylist) playNextInPlaylist(index + 1)
+                        }, delaySeconds * 1000) // Convert to milliseconds
+                    } else {
+                        playNextInPlaylist(index + 1)
+                    }
+                    // --- DELAY LOGIC END ---
+                    if (!isDelayEnabled && !isPlayingPlaylist)
+                    {
+                        releasePlayer()
+                        binding.tvStatus.text = "Ready"
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "playSingle failed", e)
@@ -261,62 +279,72 @@ class MainActivity : AppCompatActivity() {
             isPlayingPlaylist = false
             binding.btnPlayAll.text = "Play Playlist"
             binding.tvStatus.text = "Ready"
+            adapter.clearSelection()
             return
+        }
+
+        // Prepare the playback order
+        playbackOrder.clear()
+        playbackOrder.addAll(recordings)
+
+        // Shuffle if the switch is on
+        if (binding.switchShuffle.isChecked) {
+            playbackOrder.shuffle()
         }
 
         isPlayingPlaylist = true
         binding.btnPlayAll.text = "Stop Playlist"
-        //playNextInPlaylist(0)
-
-        playbackOrder.clear()
-        playbackOrder.addAll(recordings)
-
-        if (binding.switchShuffle.isChecked) {
-            playbackOrder.shuffle() // Randomize the copy
-        }
-
         playNextInPlaylist(0)
     }
 
     private fun playNextInPlaylist(index: Int) {
         if (index >= playbackOrder.size || !isPlayingPlaylist) {
-            stopPlaylistUI()
-            adapter.updateSelection(RecyclerView.NO_POSITION) // Clear highlight when done
+            isPlayingPlaylist = false
+            binding.btnPlayAll.text = "Play Playlist"
+            binding.tvStatus.text = "Ready"
+            adapter.clearSelection()
+            releasePlayer()
             return
         }
 
-        var currentFile = playbackOrder[index]
+        val file = playbackOrder[index]
 
-        // Find the visual index in the original list for the highlight
-        val visualIndex = recordings.indexOf(currentFile)
-        if (visualIndex != -1) {
+        // Find where this file is in the original list for highlighting
+        val visualIndex = recordings.indexOf(file)
+
+        val delayText = binding.etDelaySeconds.text.toString()
+        val seconds = delayText.toLongOrNull() ?: 0L
+        val shouldDelay = binding.switchDelay.isChecked && index > 0
+        val delayMillis = if (shouldDelay) seconds * 1000L else 0L
+
+        if (delayMillis > 0) {
+            binding.tvStatus.text = "Waiting ${seconds}s..."
+        }
+
+        binding.root.postDelayed({
+            if (!isPlayingPlaylist) return@postDelayed
+
+            // Update highlight using the index from the original list
             adapter.updateSelection(visualIndex)
             binding.recyclerView.smoothScrollToPosition(visualIndex)
-        }
-        // Check against playbackOrder size
-        if (index >= playbackOrder.size || !isPlayingPlaylist) {
-            stopPlaylistUI()
-            return
-        }
+            binding.tvStatus.text = "Playing (${index + 1}/${playbackOrder.size}): ${file.nameWithoutExtension}"
 
-        currentFile = playbackOrder[index]
-        binding.tvStatus.text = "Playing (${index + 1}/${playbackOrder.size}): ${currentFile.nameWithoutExtension}"
-
-        releasePlayer()
-        mediaPlayer = MediaPlayer().apply {
-            try {
-                setDataSource(currentFile.absolutePath)
-                prepareAsync()
-                setOnPreparedListener { start() }
-                setOnCompletionListener { playNextInPlaylist(index + 1) }
-                setOnErrorListener { _, _, _ ->
+            releasePlayer()
+            mediaPlayer = MediaPlayer().apply {
+                try {
+                    setDataSource(file.absolutePath)
+                    prepareAsync()
+                    setOnPreparedListener { start() }
+                    setOnCompletionListener { playNextInPlaylist(index + 1) }
+                    setOnErrorListener { _, _, _ ->
+                        playNextInPlaylist(index + 1)
+                        true
+                    }
+                } catch (e: Exception) {
                     playNextInPlaylist(index + 1)
-                    true
                 }
-            } catch (e: Exception) {
-                playNextInPlaylist(index + 1)
             }
-        }
+        }, delayMillis)
     }
 
     // Helper to clean up the UI state
