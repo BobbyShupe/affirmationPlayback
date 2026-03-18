@@ -22,6 +22,8 @@ import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
+    private val playlistNames = mutableSetOf<String>()
+    private val playlists = mutableMapOf<String, MutableList<String>>()
     private lateinit var binding: ActivityMainBinding
     private var recorder: MediaRecorder? = null
     private var currentRecordingFile: File? = null
@@ -62,6 +64,12 @@ class MainActivity : AppCompatActivity() {
         binding.recyclerView.layoutManager = LinearLayoutManager(this)
         binding.recyclerView.adapter = adapter
 
+        binding.btnNewPlaylist.setOnClickListener {
+            showCreatePlaylistDialog()
+        }
+
+
+
         binding.btnRecord.setOnClickListener {
             if (hasMicPermission()) {
                 startRecording()
@@ -82,7 +90,63 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        binding.btnViewPlaylists.setOnClickListener {
+            if (playlistNames.isEmpty()) {
+                Toast.makeText(this, "No playlists yet", Toast.LENGTH_SHORT).show()
+            } else {
+                val namesArray = playlistNames.toTypedArray()
+                MaterialAlertDialogBuilder(this)
+                    .setTitle("Your Playlists")
+                    .setItems(namesArray) { dialog, which ->
+                        val selectedName = namesArray[which]
+                        Toast.makeText(this, "Selected: $selectedName", Toast.LENGTH_SHORT).show()
+                        // Later: open that playlist
+                    }
+                    .setPositiveButton("Close", null)
+                    .show()
+            }
+        }
+
         loadRecordings()
+    }
+
+    private fun showCreatePlaylistDialog() {
+        val input = TextInputEditText(this).apply {
+            hint = "Playlist name (e.g. Morning Motivation)"
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Create new playlist")
+            .setView(input)
+            .setPositiveButton("Create") { _, _ ->
+                val name = input.text.toString().trim() ?: ""
+                if (name.isNotEmpty()) {
+
+                    playlists[name] = mutableListOf()
+                    Toast.makeText(this, "Playlist '$name' created", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Name cannot be empty", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun createNewPlaylist(name: String) {
+        // Option A: Just remember the name (simple, in-memory)
+        // playlists.add(name)
+        // adapter.notifyDataSetChanged()
+
+        // Option B: Save to SharedPreferences or file (persistent)
+        val prefs = getSharedPreferences("playlists", MODE_PRIVATE)
+        val existing = prefs.getStringSet("playlist_names", mutableSetOf()) ?: mutableSetOf()
+        existing.add(name)
+        prefs.edit().putStringSet("playlist_names", existing).apply()
+
+        Toast.makeText(this, "Playlist '$name' created", Toast.LENGTH_SHORT).show()
+
+        // Optional: switch to this playlist view or refresh list
+        // loadPlaylists()
     }
 
     private fun hasMicPermission(): Boolean =

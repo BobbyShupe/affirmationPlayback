@@ -1,23 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="16dp">
+    android:padding="8dp">
 
-    <!-- Status text -->
+    <!-- Status -->
     <com.google.android.material.textview.MaterialTextView
         android:id="@+id/tv_status"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Ready"
         android:textSize="20sp"
-        android:textStyle="bold"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Buttons row – smaller, flat, no round corners -->
+    <!-- Control buttons -->
     <LinearLayout
         android:id="@+id/control_buttons"
         android:layout_width="0dp"
@@ -25,61 +25,53 @@
         android:orientation="horizontal"
         android:gravity="center"
         android:layout_marginTop="20dp"
-        android:layout_marginBottom="24dp"
         app:layout_constraintTop_toBottomOf="@id/tv_status"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
+        app:layout_constraintTop_toTopOf="@id/recyclerView">
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_record"
-            style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="wrap_content"
             android:layout_height="40dp"
-            android:minHeight="40dp"
             android:text="Record"
-            android:textSize="14sp"
-            android:paddingHorizontal="16dp"
-            android:layout_marginEnd="12dp"
-            app:cornerRadius="0dp" />
+            android:layout_marginEnd="12dp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_stop"
-            style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="wrap_content"
             android:layout_height="40dp"
-            android:minHeight="40dp"
             android:text="Stop"
-            android:textSize="14sp"
-            android:paddingHorizontal="16dp"
-            android:layout_marginEnd="12dp"
             android:enabled="false"
-            app:cornerRadius="0dp" />
+            android:layout_marginEnd="12dp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_play_all"
-            style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="wrap_content"
             android:layout_height="40dp"
-            android:minHeight="40dp"
-            android:text="Play All"
-            android:textSize="14sp"
-            android:paddingHorizontal="16dp"
-            app:cornerRadius="0dp" />
+            android:text="Play All" />
+
 
     </LinearLayout>
 
-    <!-- List container with distinct look -->
+    <!-- List container -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerView"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="1dp"
+        android:layout_marginStart="1dp"
+        android:padding="2dp"
         android:background="@drawable/list_background"
-        android:padding="8dp"
-        android:clipToPadding="false"
-        app:layout_constraintTop_toBottomOf="@id/control_buttons"
-        app:layout_constraintBottom_toBottomOf="parent"
+
+
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintEnd_toStartOf="@id/playlist_buttons"
+        app:layout_constraintTop_toBottomOf="@id/control_buttons"
+        app:layout_constraintBottom_toBottomOf="parent"/>
+
+         />
 
     <!-- Empty state -->
     <com.google.android.material.textview.MaterialTextView
@@ -90,10 +82,74 @@
         android:textSize="18sp"
         android:textColor="#757575"
         android:gravity="center"
-        android:visibility="gone"
-        app:layout_constraintTop_toTopOf="@id/recyclerView"
-        app:layout_constraintBottom_toBottomOf="@id/recyclerView"
-        app:layout_constraintStart_toStartOf="@id/recyclerView"
-        app:layout_constraintEnd_toEndOf="@id/recyclerView" />
+        android:visibility="gone" >
+
+    </com.google.android.material.textview.MaterialTextView>
+
+
+
+
+
+    <!-- Playlist buttons – placed directly under the list -->
+    <LinearLayout
+        android:id="@+id/playlist_buttons"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="start"
+        android:orientation="vertical"
+
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/recyclerView"
+
+        app:layout_constraintTop_toBottomOf="@id/control_buttons"
+        >
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_new_playlist"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="12dp"
+            android:text="New Playlist"
+            android:textSize="14sp"
+
+            />
+
+
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_manage_playlists"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:text="Manage Playlists"
+            android:textSize="14sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_view_playlists"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:text="View Playlists"
+            android:textSize="14sp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/switchPlayAll"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:checked="false" />
+
+        <androidx.appcompat.widget.AppCompatToggleButton
+            android:id="@+id/togglePlayAll"
+            android:layout_width="96dp"
+            android:layout_height="48dp"
+            android:gravity="start"
+            android:padding="8dp"
+            android:textOff="Play All\nOFF"
+            android:textOn="Play All\nON"
+            android:textSize="14sp"
+            app:backgroundTint="@color/toggle_background_selector" />
+
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
