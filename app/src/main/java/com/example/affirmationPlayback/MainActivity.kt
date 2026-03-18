@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.example.affirmationPlayback.databinding.ActivityMainBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
@@ -22,6 +23,7 @@ import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
+    private var playbackOrder = mutableListOf<File>()
     private val playlistNames = mutableSetOf<String>()
     private val playlists = mutableMapOf<String, MutableList<String>>()
     private lateinit var binding: ActivityMainBinding
@@ -229,6 +231,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun playSingle(file: File) {
+        val index = recordings.indexOf(file)
+        if (index != -1) {
+            adapter.updateSelection(index)
+            binding.recyclerView.smoothScrollToPosition(index) // Optional: scroll to it
+        }
         releasePlayer()
         mediaPlayer = MediaPlayer().apply {
             try {
@@ -259,25 +266,46 @@ class MainActivity : AppCompatActivity() {
 
         isPlayingPlaylist = true
         binding.btnPlayAll.text = "Stop Playlist"
+        //playNextInPlaylist(0)
+
+        playbackOrder.clear()
+        playbackOrder.addAll(recordings)
+
+        if (binding.switchShuffle.isChecked) {
+            playbackOrder.shuffle() // Randomize the copy
+        }
+
         playNextInPlaylist(0)
     }
 
     private fun playNextInPlaylist(index: Int) {
-        if (index >= recordings.size || !isPlayingPlaylist) {
-            isPlayingPlaylist = false
-            binding.btnPlayAll.text = "Play Playlist"
-            binding.tvStatus.text = "Ready"
-            releasePlayer()
+        if (index >= playbackOrder.size || !isPlayingPlaylist) {
+            stopPlaylistUI()
+            adapter.updateSelection(RecyclerView.NO_POSITION) // Clear highlight when done
             return
         }
 
-        val file = recordings[index]
-        binding.tvStatus.text = "Playing (${index + 1}/${recordings.size}): ${file.nameWithoutExtension}"
+        var currentFile = playbackOrder[index]
+
+        // Find the visual index in the original list for the highlight
+        val visualIndex = recordings.indexOf(currentFile)
+        if (visualIndex != -1) {
+            adapter.updateSelection(visualIndex)
+            binding.recyclerView.smoothScrollToPosition(visualIndex)
+        }
+        // Check against playbackOrder size
+        if (index >= playbackOrder.size || !isPlayingPlaylist) {
+            stopPlaylistUI()
+            return
+        }
+
+        currentFile = playbackOrder[index]
+        binding.tvStatus.text = "Playing (${index + 1}/${playbackOrder.size}): ${currentFile.nameWithoutExtension}"
 
         releasePlayer()
         mediaPlayer = MediaPlayer().apply {
             try {
-                setDataSource(file.absolutePath)
+                setDataSource(currentFile.absolutePath)
                 prepareAsync()
                 setOnPreparedListener { start() }
                 setOnCompletionListener { playNextInPlaylist(index + 1) }
@@ -291,6 +319,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Helper to clean up the UI state
+    private fun stopPlaylistUI() {
+        releasePlayer()
+        isPlayingPlaylist = false
+        binding.btnPlayAll.text = "Play Playlist"
+        binding.tvStatus.text = "Ready"
+        adapter.updateSelection(RecyclerView.NO_POSITION)
+    }
     private fun releasePlayer() {
         mediaPlayer?.apply {
             try { stop() } catch (_: Exception) {}

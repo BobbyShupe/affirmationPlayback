@@ -133,20 +133,14 @@
             android:text="View Playlists"
             android:textSize="14sp" />
 
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/switchPlayAll"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:checked="false" />
-
         <androidx.appcompat.widget.AppCompatToggleButton
-            android:id="@+id/togglePlayAll"
+            android:id="@+id/switchShuffle"
             android:layout_width="96dp"
             android:layout_height="48dp"
             android:gravity="start"
             android:padding="8dp"
-            android:textOff="Play All\nOFF"
-            android:textOn="Play All\nON"
+            android:textOff="Shuffle\nOFF"
+            android:textOn="Shuffle\nON"
             android:textSize="14sp"
             app:backgroundTint="@color/toggle_background_selector" />
 

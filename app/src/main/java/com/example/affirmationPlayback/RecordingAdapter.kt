@@ -101,4 +101,14 @@ class RecordingAdapter(
         selectedPosition = RecyclerView.NO_POSITION
         if (oldPos != RecyclerView.NO_POSITION) notifyItemChanged(oldPos)
     }
+
+    // Add this inside the RecordingAdapter class
+    fun updateSelection(position: Int) {
+        val oldPos = selectedPosition
+        selectedPosition = position
+
+        // Notify the change to both the old and new items to update their background colors
+        if (oldPos != RecyclerView.NO_POSITION) notifyItemChanged(oldPos)
+        if (selectedPosition != RecyclerView.NO_POSITION) notifyItemChanged(selectedPosition)
+    }
 }
