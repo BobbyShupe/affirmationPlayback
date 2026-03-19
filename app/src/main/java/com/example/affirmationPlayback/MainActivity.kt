@@ -31,6 +31,8 @@ class MainActivity : AppCompatActivity() {
     private var currentRecordingFile: File? = null
     private val recordings = mutableListOf<File>()
     private lateinit var adapter: RecordingAdapter
+    private val playlistHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var playlistRunnable: Runnable? = null
 
     private var mediaPlayer: MediaPlayer? = null
     private var isPlayingPlaylist = false
@@ -232,11 +234,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun playSingle(file: File) {
         val index = recordings.indexOf(file)
-        adapter.updateSelection(index)
         if (index != -1) {
             adapter.updateSelection(index)
-            binding.recyclerView.smoothScrollToPosition(index) // Optional: scroll to it
+            binding.recyclerView.smoothScrollToPosition(index)
         }
+
         releasePlayer()
         mediaPlayer = MediaPlayer().apply {
             try {
@@ -244,30 +246,19 @@ class MainActivity : AppCompatActivity() {
                 prepare()
                 start()
                 binding.tvStatus.text = "Playing: ${file.nameWithoutExtension}"
-                setOnCompletionListener {
-                    // --- DELAY LOGIC START ---
-                    val delaySeconds = binding.etDelaySeconds.text.toString().toLongOrNull() ?: 0L
-                    val isDelayEnabled = binding.switchDelay.isChecked // Assuming your switch ID
 
-                    if (isDelayEnabled && delaySeconds > 0) {
-                        binding.tvStatus.text = "Waiting $delaySeconds seconds..."
-                        // Wait before playing the next track
-                        binding.root.postDelayed({
-                            if (isPlayingPlaylist) playNextInPlaylist(index + 1)
-                        }, delaySeconds * 1000) // Convert to milliseconds
-                    } else {
+                setOnCompletionListener {
+                    // Only trigger the "Next" logic if we are actually in Playlist mode
+                    if (isPlayingPlaylist) {
                         playNextInPlaylist(index + 1)
-                    }
-                    // --- DELAY LOGIC END ---
-                    if (!isDelayEnabled && !isPlayingPlaylist)
-                    {
+                    } else {
                         releasePlayer()
                         binding.tvStatus.text = "Ready"
+                        adapter.clearSelection()
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "playSingle failed", e)
-                Toast.makeText(this@MainActivity, "Cannot play this file", Toast.LENGTH_SHORT).show()
                 releasePlayer()
             }
         }
@@ -297,34 +288,32 @@ class MainActivity : AppCompatActivity() {
         playNextInPlaylist(0)
     }
 
+    // Add this variable at the top of MainActivity
+
     private fun playNextInPlaylist(index: Int) {
+        // 1. Remove any pending delayed starts first to prevent overlaps
+        playlistRunnable?.let { playlistHandler.removeCallbacks(it) }
+
         if (index >= playbackOrder.size || !isPlayingPlaylist) {
-            isPlayingPlaylist = false
-            binding.btnPlayAll.text = "Play Playlist"
-            binding.tvStatus.text = "Ready"
-            adapter.clearSelection()
-            releasePlayer()
+            stopPlaylistUI()
             return
         }
 
         val file = playbackOrder[index]
-
-        // Find where this file is in the original list for highlighting
         val visualIndex = recordings.indexOf(file)
 
-        val delayText = binding.etDelaySeconds.text.toString()
-        val seconds = delayText.toLongOrNull() ?: 0L
-        val shouldDelay = binding.switchDelay.isChecked && index > 0
-        val delayMillis = if (shouldDelay) seconds * 1000L else 0L
+        val delaySeconds = binding.etDelaySeconds.text.toString().toLongOrNull() ?: 0L
+        val isDelayEnabled = binding.switchDelay.isChecked
+        // Only delay if it's NOT the first track
+        val actualDelay = if (isDelayEnabled && index > 0) delaySeconds * 1000L else 0L
 
-        if (delayMillis > 0) {
-            binding.tvStatus.text = "Waiting ${seconds}s..."
+        if (actualDelay > 0) {
+            binding.tvStatus.text = "Waiting ${delaySeconds}s..."
         }
 
-        binding.root.postDelayed({
-            if (!isPlayingPlaylist) return@postDelayed
+        playlistRunnable = Runnable {
+            if (!isPlayingPlaylist) return@Runnable
 
-            // Update highlight using the index from the original list
             adapter.updateSelection(visualIndex)
             binding.recyclerView.smoothScrollToPosition(visualIndex)
             binding.tvStatus.text = "Playing (${index + 1}/${playbackOrder.size}): ${file.nameWithoutExtension}"
@@ -333,8 +322,8 @@ class MainActivity : AppCompatActivity() {
             mediaPlayer = MediaPlayer().apply {
                 try {
                     setDataSource(file.absolutePath)
-                    prepareAsync()
-                    setOnPreparedListener { start() }
+                    prepare()
+                    start()
                     setOnCompletionListener { playNextInPlaylist(index + 1) }
                     setOnErrorListener { _, _, _ ->
                         playNextInPlaylist(index + 1)
@@ -344,8 +333,11 @@ class MainActivity : AppCompatActivity() {
                     playNextInPlaylist(index + 1)
                 }
             }
-        }, delayMillis)
+        }
+
+        playlistHandler.postDelayed(playlistRunnable!!, actualDelay)
     }
+
 
     // Helper to clean up the UI state
     private fun stopPlaylistUI() {
@@ -362,6 +354,8 @@ class MainActivity : AppCompatActivity() {
         }
         mediaPlayer = null
     }
+
+
 
     private fun showRenameDialog(file: File) {
         val input = TextInputEditText(this).apply { setText(file.nameWithoutExtension) }
