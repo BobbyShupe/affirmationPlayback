@@ -1,18 +1,21 @@
 package com.example.affirmationPlayback
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.Manifest
 import android.content.pm.PackageManager
-import android.media.MediaPlayer
 import android.media.MediaRecorder
-import android.os.Bundle
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.example.affirmationPlayback.databinding.ActivityMainBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
@@ -23,19 +26,12 @@ import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
-    private var playbackOrder = mutableListOf<File>()
-    private val playlistNames = mutableSetOf<String>()
-    private val playlists = mutableMapOf<String, MutableList<String>>()
     private lateinit var binding: ActivityMainBinding
     private var recorder: MediaRecorder? = null
     private var currentRecordingFile: File? = null
     private val recordings = mutableListOf<File>()
     private lateinit var adapter: RecordingAdapter
-    private val playlistHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private var playlistRunnable: Runnable? = null
-
-    private var mediaPlayer: MediaPlayer? = null
-    private var isPlayingPlaylist = false
+    private var isPlaylistActive = false
 
     private val TAG = "AffirmMain"
 
@@ -49,6 +45,43 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val playbackReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                ACTION_PLAYBACK_STATE -> {
+                    val state = intent.getStringExtra(EXTRA_STATE) ?: return
+                    val trackName = intent.getStringExtra(EXTRA_TRACK_NAME)
+                    val current = intent.getIntExtra(EXTRA_CURRENT_INDEX, -1)
+                    val total = intent.getIntExtra(EXTRA_TOTAL_COUNT, 0)
+
+                    when (state) {
+                        STATE_PLAYING -> {
+                            binding.tvStatus.text = if (total > 1) {
+                                "Playing (${current + 1}/$total): $trackName"
+                            } else {
+                                "Playing: $trackName"
+                            }
+                            val file = File(intent.getStringExtra(EXTRA_FILE_PATH) ?: return)
+                            val pos = recordings.indexOf(file)
+                            if (pos >= 0) {
+                                adapter.updateSelection(pos)
+                                binding.recyclerView.smoothScrollToPosition(pos)
+                            }
+                            isPlaylistActive = total > 1
+                            binding.btnPlayAll.text = "Stop Playback"
+                        }
+                        STATE_STOPPED, STATE_COMPLETED -> {
+                            binding.tvStatus.text = "Ready"
+                            adapter.clearSelection()
+                            isPlaylistActive = false
+                            binding.btnPlayAll.text = "Play All"
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -56,12 +89,11 @@ class MainActivity : AppCompatActivity() {
 
         adapter = RecordingAdapter(
             recordings = recordings,
-            onPlay = { file -> playSingle(file) },
+            onPlay = { file -> startServiceForSingle(file) },
             onRename = { file -> showRenameDialog(file) },
             onDelete = { file ->
-
                 deleteRecording(file)
-                adapter.clearSelection()           // optional: remove highlight
+                adapter.clearSelection()
             }
         )
 
@@ -71,8 +103,6 @@ class MainActivity : AppCompatActivity() {
         binding.btnNewPlaylist.setOnClickListener {
             showCreatePlaylistDialog()
         }
-
-
 
         binding.btnRecord.setOnClickListener {
             if (hasMicPermission()) {
@@ -87,70 +117,65 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnPlayAll.setOnClickListener {
-            if (recordings.isNotEmpty()) {
-                playPlaylist()
+            if (isPlaylistActive) {
+                stopPlaybackService()
             } else {
-                Toast.makeText(this, "No recordings to play", Toast.LENGTH_SHORT).show()
+                startPlaylistService()
             }
         }
 
         binding.btnViewPlaylists.setOnClickListener {
-            if (playlistNames.isEmpty()) {
-                Toast.makeText(this, "No playlists yet", Toast.LENGTH_SHORT).show()
-            } else {
-                val namesArray = playlistNames.toTypedArray()
-                MaterialAlertDialogBuilder(this)
-                    .setTitle("Your Playlists")
-                    .setItems(namesArray) { dialog, which ->
-                        val selectedName = namesArray[which]
-                        Toast.makeText(this, "Selected: $selectedName", Toast.LENGTH_SHORT).show()
-                        // Later: open that playlist
-                    }
-                    .setPositiveButton("Close", null)
-                    .show()
-            }
+            // TODO: implement playlist viewing if needed
+            Toast.makeText(this, "Playlist feature coming soon", Toast.LENGTH_SHORT).show()
         }
 
         loadRecordings()
+
+        // Register local broadcast receiver
+        val filter = IntentFilter(ACTION_PLAYBACK_STATE)
+        LocalBroadcastManager.getInstance(this).registerReceiver(playbackReceiver, filter)
     }
 
-    private fun showCreatePlaylistDialog() {
-        val input = TextInputEditText(this).apply {
-            hint = "Playlist name (e.g. Morning Motivation)"
+    private fun startServiceForSingle(file: File) {
+        if (isPlaylistActive) {
+            Toast.makeText(this, "Stop current playback first", Toast.LENGTH_SHORT).show()
+            return
         }
 
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Create new playlist")
-            .setView(input)
-            .setPositiveButton("Create") { _, _ ->
-                val name = input.text.toString().trim() ?: ""
-                if (name.isNotEmpty()) {
-
-                    playlists[name] = mutableListOf()
-                    Toast.makeText(this, "Playlist '$name' created", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this, "Name cannot be empty", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        val intent = Intent(this, PlaybackService::class.java).apply {
+            action = PlaybackService.ACTION_START_PLAYLIST
+            putStringArrayListExtra(PlaybackService.EXTRA_FILE_PATHS, arrayListOf(file.absolutePath))
+            putExtra(PlaybackService.EXTRA_SHUFFLE, false)
+            putExtra(PlaybackService.EXTRA_DELAY_SECONDS, 0)
+        }
+        ContextCompat.startForegroundService(this, intent)
     }
 
-    private fun createNewPlaylist(name: String) {
-        // Option A: Just remember the name (simple, in-memory)
-        // playlists.add(name)
-        // adapter.notifyDataSetChanged()
+    private fun startPlaylistService() {
+        if (recordings.isEmpty()) {
+            Toast.makeText(this, "No recordings to play", Toast.LENGTH_SHORT).show()
+            return
+        }
 
-        // Option B: Save to SharedPreferences or file (persistent)
-        val prefs = getSharedPreferences("playlists", MODE_PRIVATE)
-        val existing = prefs.getStringSet("playlist_names", mutableSetOf()) ?: mutableSetOf()
-        existing.add(name)
-        prefs.edit().putStringSet("playlist_names", existing).apply()
+        val paths = ArrayList(recordings.map { it.absolutePath })
+        val delay = binding.etDelaySeconds.text.toString().toIntOrNull() ?: 0
+        val shuffle = binding.switchShuffle.isChecked
 
-        Toast.makeText(this, "Playlist '$name' created", Toast.LENGTH_SHORT).show()
+        val intent = Intent(this, PlaybackService::class.java).apply {
+            action = PlaybackService.ACTION_START_PLAYLIST
+            putStringArrayListExtra(PlaybackService.EXTRA_FILE_PATHS, paths)
+            putExtra(PlaybackService.EXTRA_SHUFFLE, shuffle)
+            putExtra(PlaybackService.EXTRA_DELAY_SECONDS, delay)
+        }
 
-        // Optional: switch to this playlist view or refresh list
-        // loadPlaylists()
+        ContextCompat.startForegroundService(this, intent)
+    }
+
+    private fun stopPlaybackService() {
+        val intent = Intent(this, PlaybackService::class.java).apply {
+            action = PlaybackService.ACTION_STOP
+        }
+        startService(intent)  // we can use startService here since it's already running
     }
 
     private fun hasMicPermission(): Boolean =
@@ -165,12 +190,12 @@ class MainActivity : AppCompatActivity() {
     private fun loadRecordings() {
         recordings.clear()
         val files = getRecordingsDir().listFiles() ?: emptyArray()
-        recordings.addAll(files.sortedBy { it.lastModified() })  // oldest first
+        recordings.addAll(files.sortedBy { it.lastModified() })
         adapter.notifyDataSetChanged()
-        updatePlaylistVisibility()
+        updateUIState()
     }
 
-    private fun updatePlaylistVisibility() {
+    private fun updateUIState() {
         if (recordings.isEmpty()) {
             binding.tvEmpty.visibility = View.VISIBLE
             binding.recyclerView.visibility = View.GONE
@@ -212,10 +237,10 @@ class MainActivity : AppCompatActivity() {
         releaseRecorder()
 
         currentRecordingFile?.let { file ->
-            recordings.add(file)          // ← adds to the end (bottom)
+            recordings.add(file)
             adapter.notifyItemInserted(recordings.size - 1)
             binding.recyclerView.scrollToPosition(recordings.size - 1)
-            updatePlaylistVisibility()
+            updateUIState()
         }
 
         currentRecordingFile = null
@@ -232,131 +257,6 @@ class MainActivity : AppCompatActivity() {
         recorder = null
     }
 
-    private fun playSingle(file: File) {
-        val index = recordings.indexOf(file)
-        if (index != -1) {
-            adapter.updateSelection(index)
-            binding.recyclerView.smoothScrollToPosition(index)
-        }
-
-        releasePlayer()
-        mediaPlayer = MediaPlayer().apply {
-            try {
-                setDataSource(file.absolutePath)
-                prepare()
-                start()
-                binding.tvStatus.text = "Playing: ${file.nameWithoutExtension}"
-
-                setOnCompletionListener {
-                    // Only trigger the "Next" logic if we are actually in Playlist mode
-                    if (isPlayingPlaylist) {
-                        playNextInPlaylist(index + 1)
-                    } else {
-                        releasePlayer()
-                        binding.tvStatus.text = "Ready"
-                        adapter.clearSelection()
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "playSingle failed", e)
-                releasePlayer()
-            }
-        }
-    }
-
-    private fun playPlaylist() {
-        if (isPlayingPlaylist) {
-            releasePlayer()
-            isPlayingPlaylist = false
-            binding.btnPlayAll.text = "Play Playlist"
-            binding.tvStatus.text = "Ready"
-            adapter.clearSelection()
-            return
-        }
-
-        // Prepare the playback order
-        playbackOrder.clear()
-        playbackOrder.addAll(recordings)
-
-        // Shuffle if the switch is on
-        if (binding.switchShuffle.isChecked) {
-            playbackOrder.shuffle()
-        }
-
-        isPlayingPlaylist = true
-        binding.btnPlayAll.text = "Stop Playlist"
-        playNextInPlaylist(0)
-    }
-
-    // Add this variable at the top of MainActivity
-
-    private fun playNextInPlaylist(index: Int) {
-        // 1. Remove any pending delayed starts first to prevent overlaps
-        playlistRunnable?.let { playlistHandler.removeCallbacks(it) }
-
-        if (index >= playbackOrder.size || !isPlayingPlaylist) {
-            stopPlaylistUI()
-            return
-        }
-
-        val file = playbackOrder[index]
-        val visualIndex = recordings.indexOf(file)
-
-        val delaySeconds = binding.etDelaySeconds.text.toString().toLongOrNull() ?: 0L
-        val isDelayEnabled = binding.switchDelay.isChecked
-        // Only delay if it's NOT the first track
-        val actualDelay = if (isDelayEnabled && index > 0) delaySeconds * 1000L else 0L
-
-        if (actualDelay > 0) {
-            binding.tvStatus.text = "Waiting ${delaySeconds}s..."
-        }
-
-        playlistRunnable = Runnable {
-            if (!isPlayingPlaylist) return@Runnable
-
-            adapter.updateSelection(visualIndex)
-            binding.recyclerView.smoothScrollToPosition(visualIndex)
-            binding.tvStatus.text = "Playing (${index + 1}/${playbackOrder.size}): ${file.nameWithoutExtension}"
-
-            releasePlayer()
-            mediaPlayer = MediaPlayer().apply {
-                try {
-                    setDataSource(file.absolutePath)
-                    prepare()
-                    start()
-                    setOnCompletionListener { playNextInPlaylist(index + 1) }
-                    setOnErrorListener { _, _, _ ->
-                        playNextInPlaylist(index + 1)
-                        true
-                    }
-                } catch (e: Exception) {
-                    playNextInPlaylist(index + 1)
-                }
-            }
-        }
-
-        playlistHandler.postDelayed(playlistRunnable!!, actualDelay)
-    }
-
-
-    // Helper to clean up the UI state
-    private fun stopPlaylistUI() {
-        releasePlayer()
-        isPlayingPlaylist = false
-        binding.btnPlayAll.text = "Play Playlist"
-        binding.tvStatus.text = "Ready"
-        adapter.updateSelection(RecyclerView.NO_POSITION)
-    }
-    private fun releasePlayer() {
-        mediaPlayer?.apply {
-            try { stop() } catch (_: Exception) {}
-            try { release() } catch (_: Exception) {}
-        }
-        mediaPlayer = null
-    }
-
-
-
     private fun showRenameDialog(file: File) {
         val input = TextInputEditText(this).apply { setText(file.nameWithoutExtension) }
 
@@ -369,10 +269,8 @@ class MainActivity : AppCompatActivity() {
                     val parentDir = file.parentFile ?: getRecordingsDir()
                     var uniqueFile = File(parentDir, "$newName.m4a")
 
-                    // If the file exists and it's NOT the current file we are renaming
                     if (uniqueFile.exists() && uniqueFile.absolutePath != file.absolutePath) {
                         var counter = 1
-                        // Loop until a name like "Affirmation (1).m4a" is available
                         while (uniqueFile.exists()) {
                             uniqueFile = File(parentDir, "$newName ($counter).m4a")
                             counter++
@@ -380,7 +278,7 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     if (file.renameTo(uniqueFile)) {
-                        loadRecordings() // Refresh the list from disk
+                        loadRecordings()
                     } else {
                         Toast.makeText(this, "Rename failed", Toast.LENGTH_SHORT).show()
                     }
@@ -400,7 +298,7 @@ class MainActivity : AppCompatActivity() {
                     if (pos >= 0) {
                         recordings.removeAt(pos)
                         adapter.notifyItemRemoved(pos)
-                        updatePlaylistVisibility()
+                        updateUIState()
                     }
                     Toast.makeText(this, "Deleted", Toast.LENGTH_SHORT).show()
                 } else {
@@ -411,9 +309,27 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showCreatePlaylistDialog() {
+        Toast.makeText(this, "Playlist feature coming soon", Toast.LENGTH_SHORT).show()
+        // Implement later if needed
+    }
+
     override fun onDestroy() {
         releaseRecorder()
-        releasePlayer()
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(playbackReceiver)
         super.onDestroy()
+    }
+
+    companion object {
+        const val ACTION_PLAYBACK_STATE = "com.example.affirmationPlayback.ACTION_PLAYBACK_STATE"
+        const val EXTRA_STATE = "extra_state"
+        const val EXTRA_TRACK_NAME = "extra_track_name"
+        const val EXTRA_FILE_PATH = "extra_file_path"
+        const val EXTRA_CURRENT_INDEX = "extra_current_index"
+        const val EXTRA_TOTAL_COUNT = "extra_total_count"
+
+        const val STATE_PLAYING = "playing"
+        const val STATE_STOPPED = "stopped"
+        const val STATE_COMPLETED = "completed"
     }
 }

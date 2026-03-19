@@ -1,3 +1,5 @@
+import org.gradle.kotlin.dsl.implementation
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -49,4 +51,5 @@ dependencies {
     implementation("androidx.fragment:fragment-ktx:1.8.4") // even if not using fragments
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation(libs.filament.android)
+    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
 }
