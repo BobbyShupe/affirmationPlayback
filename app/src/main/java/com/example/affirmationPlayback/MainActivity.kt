@@ -47,36 +47,48 @@ class MainActivity : AppCompatActivity() {
 
     private val playbackReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                ACTION_PLAYBACK_STATE -> {
-                    val state = intent.getStringExtra(EXTRA_STATE) ?: return
-                    val trackName = intent.getStringExtra(EXTRA_TRACK_NAME)
+            val state = intent?.getStringExtra(EXTRA_STATE) ?: return
+
+            when (state) {
+                STATE_PLAYING -> {
+                    val trackName = intent.getStringExtra(EXTRA_TRACK_NAME) ?: ""
                     val current = intent.getIntExtra(EXTRA_CURRENT_INDEX, -1)
                     val total = intent.getIntExtra(EXTRA_TOTAL_COUNT, 0)
+                    val filePath = intent.getStringExtra(EXTRA_FILE_PATH)
 
-                    when (state) {
-                        STATE_PLAYING -> {
-                            binding.tvStatus.text = if (total > 1) {
-                                "Playing (${current + 1}/$total): $trackName"
-                            } else {
-                                "Playing: $trackName"
-                            }
-                            val file = File(intent.getStringExtra(EXTRA_FILE_PATH) ?: return)
-                            val pos = recordings.indexOf(file)
-                            if (pos >= 0) {
-                                adapter.updateSelection(pos)
-                                binding.recyclerView.smoothScrollToPosition(pos)
-                            }
-                            isPlaylistActive = total > 1
-                            binding.btnPlayAll.text = "Stop Playback"
-                        }
-                        STATE_STOPPED, STATE_COMPLETED -> {
-                            binding.tvStatus.text = "Ready"
-                            adapter.clearSelection()
-                            isPlaylistActive = false
-                            binding.btnPlayAll.text = "Play All"
+                    binding.tvStatus.text = if (total > 1) {
+                        "Playing (${current + 1}/$total): $trackName"
+                    } else {
+                        "Playing: $trackName"
+                    }
+
+                    filePath?.let {
+                        val file = File(it)
+                        val pos = recordings.indexOf(file)
+                        if (pos >= 0) {
+                            adapter.updateSelection(pos)
+                            binding.recyclerView.smoothScrollToPosition(pos)
                         }
                     }
+
+                    isPlaylistActive = total > 1
+                    binding.btnPlayAll.text = "Stop Playback"
+                }
+
+                STATE_COMPLETED -> {
+                    binding.tvStatus.text = "Playback finished"
+                    adapter.clearSelection()
+                    isPlaylistActive = false
+                    binding.btnPlayAll.text = "Stop Playback"   // or change to "Clear" if you want
+
+                    // DO NOT call stopPlaybackService() here
+                }
+
+                STATE_STOPPED -> {
+                    binding.tvStatus.text = "Ready"
+                    adapter.clearSelection()
+                    isPlaylistActive = false
+                    binding.btnPlayAll.text = "Play All"
                 }
             }
         }
@@ -175,7 +187,7 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, PlaybackService::class.java).apply {
             action = PlaybackService.ACTION_STOP
         }
-        startService(intent)  // we can use startService here since it's already running
+        startService(intent)
     }
 
     private fun hasMicPermission(): Boolean =

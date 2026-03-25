@@ -116,7 +116,7 @@ class PlaybackService : Service() {
             .setContentText(status)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
+            .setOngoing(status != "Playback finished")  // Allow dismissing when finished
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPi)
             .build()
     }
@@ -190,12 +190,15 @@ class PlaybackService : Service() {
                         wakeLock?.acquire(delayMs + 2000L)
                         handler.postDelayed({ playNext() }, delayMs)
                     } else {
-                        // Last track finished
+                        // Last track finished - notify UI but keep service alive
                         val doneIntent = Intent(ACTION_PLAYBACK_STATE).apply {
                             putExtra(EXTRA_STATE, STATE_COMPLETED)
                         }
                         LocalBroadcastManager.getInstance(this@PlaybackService).sendBroadcast(doneIntent)
-                        stopPlayback()
+
+                        // Optional: update notification to show finished state
+                        val notification = buildNotification("Playback finished")
+                        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
                     }
                 }
 
@@ -219,7 +222,6 @@ class PlaybackService : Service() {
         currentIndex = -1
         playbackOrder.clear()
 
-        // Notify UI
         val stopIntent = Intent(ACTION_PLAYBACK_STATE).apply {
             putExtra(EXTRA_STATE, STATE_STOPPED)
         }
@@ -241,6 +243,11 @@ class PlaybackService : Service() {
     override fun onDestroy() {
         stopPlayback()
         super.onDestroy()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        stopPlayback()  // or leave running if you prefer
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
